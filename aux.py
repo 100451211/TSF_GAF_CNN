@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import RobustScaler, MinMaxScaler
-from sklearn import TimeSeriesSplit
+from keras.optimizers.legacy import Adam
+from keras.models import Sequential
+from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, BatchNormalization, Dropout
+
 
 def plot_loss(hist):
   plt.plot(hist.history['loss'], label='Training Loss')
@@ -15,56 +16,55 @@ def plot_loss(hist):
   plt.close()
 
 # Function to create dataset with sliding windows
-def create_dataset(dataset, look_back, forecast_horizon):
-    dataX, dataY = [], []
-    for i in range(len(dataset) - look_back - forecast_horizon + 1):
-        a = dataset[i:(i + look_back)]
-        dataX.append(a)
-        dataY.append(dataset[i + look_back:i + look_back + forecast_horizon])
-    return np.array(dataX), np.array(dataY)
+# def create_dataset(dataset, look_back, forecast_horizon):
+#     dataX, dataY = [], []
+#     for i in range(len(dataset) - look_back - forecast_horizon + 1):
+#         a = dataset[i:(i + look_back)]
+#         dataX.append(a)
+#         dataY.append(dataset[i + look_back:i + look_back + forecast_horizon])
+#     return np.array(dataX), np.array(dataY)
+
+# def create_dataset(data, look_back, forecast_horizon):
+#     X, y = [], []
+#     for i in range(len(data) - look_back - forecast_horizon + 1):
+#         X.append(data[i:(i + look_back)])
+#         y.append(data[i + look_back:i + look_back + forecast_horizon])
+#     return np.array(X), np.array(y)
+
+def create_dataset(data, look_back, forecast_horizon):
+    X, y = [], []
+    for i in range(len(data) - look_back - forecast_horizon + 1):
+        X.append(data[i:(i + look_back), 0])
+        y.append(data[(i + look_back):(i + look_back + forecast_horizon), 0])
+    return np.array(X), np.array(y)
 
 
-def find_optimal_look_back(df, forecast_horizon, look_back_values, n_splits=5):
-    # Split the dataset into train and test sets
-    train_size = int(len(df) * 0.8)
-    train, test = df[0:train_size], df[train_size:len(df)]
+def build_model(input_shape, forecast_horizon, learning_rate):
+    print(f'build.model: input_shape = {input_shape}')
+    #input_shape = (300, 300, 1) # (batch_size, height, width, channels)
+    model = Sequential([
+        # Start with a 1st Convolutional layer
+        Conv2D(16, (3, 3), activation='relu', input_shape=input_shape),
+        MaxPooling2D((2, 2), padding='same'),
 
-    # Normalize the data
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    train_scaled = scaler.fit_transform(train.values.reshape(-1, 1))
-    test_scaled = scaler.transform(test.values.reshape(-1, 1))
+        # Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(300, 300, 1)),
+        # BatchNormalization(),
+        # MaxPooling2D((2, 2)),
+        
+        # Conv2D(64, (3, 3), activation='relu', padding='same'),
+        # BatchNormalization(),
+        # MaxPooling2D((2, 2)),
+        
+        # Flatten and add a dense layer
+        Flatten(),
+        Dense(64, activation='relu'),
+        Dropout(0.5),
+        
+        # Output layer with 'forecast_horizon' units
+        Dense(forecast_horizon)
+    ])
 
-    # Prepare the full dataset for cross-validation
-    dataset = np.concatenate((train_scaled, test_scaled))
-
-    # Initialize time series cross-validator
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-
-    # Record the performance for each look_back value
-    look_back_performance = {}
-
-    for look_back in look_back_values:
-        mse_scores = []
-
-        for train_index, test_index in tscv.split(dataset):
-            # Split data using the indices provided by the cross-validator
-            train, test = dataset[train_index], dataset[test_index]
-
-            # Prepare the dataset with the current look_back
-            trainX, trainY = create_dataset(train, look_back, forecast_horizon)
-            testX, testY = create_dataset(test, look_back, forecast_horizon)
-
-            # Train and make predictions
-            model = train_model(trainX, trainY)
-            predictions = model.predict(testX)
-
-            # Evaluate predictions
-            mse = mean_squared_error(testY, predictions)
-            mse_scores.append(mse)
-
-        # Store the mean MSE for the current look_back
-        look_back_performance[look_back] = np.mean(mse_scores)
-
-    # Select the best look_back value
-    best_look_back = min(look_back_performance, key=look_back_performance.get)
-    return best_look_back, look_back_performance
+    # Compile the model
+    optimizer = Adam(learning_rate=learning_rate)
+    model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mse'])
+    return model
