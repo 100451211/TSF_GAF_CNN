@@ -15,7 +15,7 @@ def plot_loss(hist):
   plt.show()
   plt.close()
 
-# Function to create dataset with sliding windows
+# # Previous version
 # def create_dataset(dataset, look_back, forecast_horizon):
 #     dataX, dataY = [], []
 #     for i in range(len(dataset) - look_back - forecast_horizon + 1):
@@ -24,13 +24,7 @@ def plot_loss(hist):
 #         dataY.append(dataset[i + look_back:i + look_back + forecast_horizon])
 #     return np.array(dataX), np.array(dataY)
 
-# def create_dataset(data, look_back, forecast_horizon):
-#     X, y = [], []
-#     for i in range(len(data) - look_back - forecast_horizon + 1):
-#         X.append(data[i:(i + look_back)])
-#         y.append(data[i + look_back:i + look_back + forecast_horizon])
-#     return np.array(X), np.array(y)
-
+# Function to create dataset with sliding windows
 def create_dataset(data, look_back, forecast_horizon):
     X, y = [], []
     for i in range(len(data) - look_back - forecast_horizon + 1):
@@ -47,9 +41,9 @@ def build_model(input_shape, forecast_horizon, learning_rate):
         Conv2D(16, (3, 3), activation='relu', input_shape=input_shape),
         MaxPooling2D((2, 2), padding='same'),
 
-        # Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(300, 300, 1)),
-        # BatchNormalization(),
-        # MaxPooling2D((2, 2)),
+        Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(300, 300, 1)),
+        BatchNormalization(),
+        MaxPooling2D((2, 2), padding='same'),
         
         # Conv2D(64, (3, 3), activation='relu', padding='same'),
         # BatchNormalization(),

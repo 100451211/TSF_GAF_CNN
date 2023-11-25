@@ -1,3 +1,5 @@
+import io
+import os
 import pyts
 import math
 from aux import *
@@ -6,10 +8,9 @@ import pandas as pd
 from tensorflow import keras
 import matplotlib.pyplot as plt
 from datetime import datetime
-from keras.optimizers.legacy import Adam
+from contextlib import redirect_stdout
 from pyts.image import GramianAngularField
 from sklearn.metrics import mean_squared_error
-from keras.models import Sequential,load_model
 from sklearn.model_selection import TimeSeriesSplit
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from sklearn.preprocessing import RobustScaler, MinMaxScaler
@@ -61,6 +62,7 @@ all_predictions = []
 all_actuals = []
 
 for train_index, val_index in tscv.split(train_scaled):
+    print(f'train_index: {train_index}, val_index: {val_index}')
     print(f"Training on {len(train_index)} samples, validating on {len(val_index)} samples.")
     #print(f"Indices for train: {train_index}, val: {val_index}")
 
@@ -94,7 +96,7 @@ for train_index, val_index in tscv.split(train_scaled):
     model = build_model((image_size, image_size, 1), forecast_horizon, learning_rate=0.0001)
     X_train_resh = X_train_gaf.reshape(-1, image_size, image_size, 1)
     X_val_resh = X_val_gaf.reshape(-1, image_size, image_size, 1)
-    history = model.fit(X_train_gaf, y_train_cv, epochs=70, batch_size=64, callbacks=[cp, es], validation_data=(X_val_gaf, y_val_cv))
+    history = model.fit(X_train_gaf, y_train_cv, epochs=20, batch_size=64, callbacks=[cp, es], validation_data=(X_val_gaf, y_val_cv))
 
     # Predict on validation set
     val_predictions = model.predict(X_val_gaf)
@@ -115,6 +117,20 @@ for train_index, val_index in tscv.split(train_scaled):
 average_val_mse = sum(val_mse_scores) / len(val_mse_scores)
 print(f'Average Validation MSE: {average_val_mse}')
 
+# Calculate MSE on test set
+X_test, y_test = create_dataset(test_scaled, look_back, forecast_horizon)
+print('Hand MSE -  sets created')
+X_test_gaf = gasf.transform(X_test.reshape(X_test.shape[0], look_back))
+print('Hand MSE -  GAF created')
+X_test_gaf = X_test_gaf.reshape(X_test_gaf.shape[0], image_size, image_size, 1)
+print('Hand MSE -  GAF reshaped')
+print('Hand MSE -  predicting...')
+test_predictions = model.predict(X_test_gaf)
+test_predictions_inv = scaler.inverse_transform(test_predictions)
+print('Hand MSE -  Predictions inverted')
+test_mse = mean_squared_error(y_test, test_predictions_inv)
+print(f'Test MSE: {test_mse}')
+
 # Optional: Plotting the training and validation loss
 # Assuming 'history' contains the training history of the last fold
 plt.plot(history.history['loss'], label='Training Loss')
@@ -124,21 +140,68 @@ plt.legend()
 plt.show()
 
 # Predictions
-num_plots = len(all_predictions)
-fig, axes = plt.subplots(num_plots, 1, figsize=(12, 6 * num_plots))
+concatenated_predictions = np.concatenate(all_predictions)
+concatenated_actuals = np.concatenate(all_actuals)
 
-for i, (preds, actuals) in enumerate(zip(all_predictions, all_actuals)):
-    # Plot on the ith subplot
-    axes[i].plot(preds[:, 0], label='Predictions')  # Plotting first forecasted value
-    axes[i].plot(actuals[:, 0], label='Actual')
-    axes[i].set_title(f'Fold {i+1} Predictions vs Actuals')
-    axes[i].set_xlabel('Time Steps')
-    axes[i].set_ylabel('B.RTD1 Value')
-    axes[i].legend()
+# Plot the concatenated predictions and actuals
+plt.figure(figsize=(15, 6))
+plt.plot(concatenated_predictions, label='Concatenated Predictions')
+plt.plot(concatenated_actuals, label='Concatenated Actuals')
+plt.title('Concatenated Predictions vs Actuals')
+plt.xlabel('Time Steps')
+plt.ylabel('Value')
+plt.legend()
 
-# Adjust layout to prevent overlap
-plt.tight_layout()
 time = datetime.now().strftime("%d-%H%M")
-plt.savefig('/images/predictions_vs_actuals{time}.png')
+plt.savefig(f'/images/[{time}]_predictions_vs_actuals.png')
 
 plt.show()
+
+# Saving results
+f = io.StringIO()
+with redirect_stdout(f):
+    model.summary()
+model_summary = f.getvalue()
+
+# Prepare the data
+new_data = {
+    'Average Validation MSE': [average_val_mse],
+    'Batch Size': [64],
+    'Epochs': [20],
+    'Learning Rate': [0.0001],
+    'Model Summary': [model_summary]
+}
+new_df = pd.DataFrame(new_data)
+
+# Write the DataFrame to an Excel file
+excel_filename = 'model_performance.xlsx'
+if not os.path.exists(excel_filename):
+    # Write the DataFrame to an Excel file
+    df.to_excel(excel_filename, index=False)
+    print(f"Data saved to {excel_filename}")
+else:
+    # Read existing data
+    existing_df = pd.read_excel(excel_filename)
+    
+    # Append new data
+    combined_df = existing_df.append(new_df, ignore_index=True)
+
+    # Save the combined DataFrame to the Excel file
+    combined_df.to_excel(excel_filename, index=False)
+    print(f"Data appended to {excel_filename}")
+
+# num_plots = len(all_predictions)
+# fig, axes = plt.subplots(num_plots, 1, figsize=(12, 6 * num_plots))
+
+# for i, (preds, actuals) in enumerate(zip(all_predictions, all_actuals)):
+#     # Plot on the ith subplot
+#     axes[i].plot(preds[:, 0], label='Predictions')  # Plotting first forecasted value
+#     axes[i].plot(actuals[:, 0], label='Actual')
+#     axes[i].set_title(f'Fold {i+1} Predictions vs Actuals')
+#     axes[i].set_xlabel('Time Steps')
+#     axes[i].set_ylabel('B.RTD1 Value')
+#     axes[i].legend()
+
+# # Adjust layout to prevent overlap
+# plt.tight_layout()
+# plt.show()
